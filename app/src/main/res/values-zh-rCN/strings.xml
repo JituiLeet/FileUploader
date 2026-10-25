@@ -22,5 +22,5 @@
     <string name="folder_note">上传文件夹时，每个文件会通过表单字段“relative_path”发送相对路径。服务器需要支持此约定才能还原文件夹结构。</string>
     <string name="clear">清空选择</string>
     <string name="use_selected_files">使用所选文件</string>
-    <string name="home_info">在其他应用的上传按钮中选择“文件上传器”，再选择文件或文件夹。选择完成后会把文件返回给原应用；文件夹结构能否保留取决于原应用或网站是否支持目录上传。</string>
+    <string name="home_info">在兼容应用的上传流程中选择“文件上传器”，然后选择文件或文件夹。选择结果会返回给调用应用；文件夹路径能否保留取决于调用应用和网站是否支持目录上传。</string>
 </resources>

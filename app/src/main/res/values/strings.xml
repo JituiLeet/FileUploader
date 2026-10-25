@@ -22,5 +22,5 @@
     <string name="folder_note">Folder uploads send each file with its relative path in the form field "relative_path". The server must support this convention to rebuild folders.</string>
     <string name="clear">Clear selection</string>
     <string name="use_selected_files">Use selected files</string>
-    <string name="home_info">Choose files from another app's upload button. FileUploader returns the selected file(s) to that app. Folder selection returns all files it can read; the website must support folder uploads to preserve paths.</string>
+    <string name="home_info">Choose FileUploader from a compatible app's upload flow, then select files or a folder. Selected items are returned to the calling app. Folder paths are preserved only when the calling app and website support directory uploads.</string>
 </resources>
