@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">FileUploader</string>
+    <string name="app_subtitle">Upload files to an HTTP/HTTPS endpoint</string>
+    <string name="upload_url">Upload URL (HTTP/HTTPS)</string>
+    <string name="pick_files">Choose files</string>
+    <string name="pick_folder">Choose folder</string>
+    <string name="upload">Upload selected</string>
+    <string name="language">Language</string>
+    <string name="system_language">Follow system</string>
+    <string name="chinese">简体中文</string>
+    <string name="english">English</string>
+    <string name="selected_files">Selected items</string>
+    <string name="no_files">No files selected yet</string>
+    <string name="tasks">Upload tasks</string>
+    <string name="ready">Ready</string>
+    <string name="uploading">Uploading</string>
+    <string name="success">Completed</string>
+    <string name="failed">Failed</string>
+    <string name="url_required">Enter an HTTP or HTTPS upload URL first.</string>
+    <string name="files_required">Choose at least one file first.</string>
+    <string name="upload_started">Upload started</string>
+    <string name="folder_note">Folder uploads send each file with its relative path in the form field "relative_path". The server must support this convention to rebuild folders.</string>
+    <string name="clear">Clear selection</string>
+</resources>

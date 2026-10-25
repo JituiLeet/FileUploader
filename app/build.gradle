@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.jituileet.fileuploader'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.jituileet.fileuploader'
+        minSdk 24
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
+}

@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">文件上传器</string>
+    <string name="app_subtitle">上传文件到 HTTP/HTTPS 接口</string>
+    <string name="upload_url">上传地址（HTTP/HTTPS）</string>
+    <string name="pick_files">选择文件</string>
+    <string name="pick_folder">选择文件夹</string>
+    <string name="upload">上传所选内容</string>
+    <string name="language">语言</string>
+    <string name="system_language">跟随系统</string>
+    <string name="chinese">简体中文</string>
+    <string name="english">English</string>
+    <string name="selected_files">已选内容</string>
+    <string name="no_files">尚未选择文件</string>
+    <string name="tasks">上传任务</string>
+    <string name="ready">等待上传</string>
+    <string name="uploading">正在上传</string>
+    <string name="success">已完成</string>
+    <string name="failed">失败</string>
+    <string name="url_required">请先填写 HTTP 或 HTTPS 上传地址。</string>
+    <string name="files_required">请先选择至少一个文件。</string>
+    <string name="upload_started">已开始上传</string>
+    <string name="folder_note">上传文件夹时，每个文件会通过表单字段“relative_path”发送相对路径。服务器需要支持此约定才能还原文件夹结构。</string>
+    <string name="clear">清空选择</string>
+</resources>
