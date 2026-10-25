@@ -51,10 +51,12 @@ public class MainActivity extends Activity {
     private Spinner languageSpinner;
     private SharedPreferences prefs;
     private boolean handlingExternal = false;
+    private boolean pickerMode = false;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        pickerMode = isFilePickerRequest(getIntent());
         applySavedLocale();
         buildUi();
         handleIncomingIntent(getIntent());
@@ -63,6 +65,7 @@ public class MainActivity extends Activity {
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        pickerMode = isFilePickerRequest(intent);
         handleIncomingIntent(intent);
     }
 
@@ -121,6 +124,7 @@ public class MainActivity extends Activity {
         urlInput.setPadding(dp(12), dp(10), dp(12), dp(10));
         urlInput.setBackgroundColor(0xFFFFFFFF);
         root.addView(urlInput, margin(0, 0, 0, 12));
+        urlInput.setVisibility(View.GONE);
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
@@ -129,10 +133,12 @@ public class MainActivity extends Activity {
         actions.addView(files, new LinearLayout.LayoutParams(0, dp(48), 1));
         actions.addView(folder, new LinearLayout.LayoutParams(0, dp(48), 1));
         root.addView(actions, margin(0, 0, 0, 12));
+        if (!pickerMode) actions.setVisibility(View.GONE);
         files.setOnClickListener(v -> openFilePicker());
         folder.setOnClickListener(v -> openFolderPicker());
 
-        root.addView(text(getString(R.string.selected_files), 18, 0xFF17233C, true), margin(0, 8, 0, 6));
+        TextView selectedTitle = text(getString(R.string.selected_files), 18, 0xFF17233C, true);
+        root.addView(selectedTitle, margin(0, 8, 0, 6));
         selectedList = new LinearLayout(this);
         selectedList.setOrientation(LinearLayout.VERTICAL);
         root.addView(selectedList);
@@ -140,17 +146,66 @@ public class MainActivity extends Activity {
         upload.setTextColor(0xFFFFFFFF);
         upload.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF315DA8));
         root.addView(upload, margin(0, 12, 0, 8));
-        upload.setOnClickListener(v -> startUploads());
+        if (pickerMode) {
+            upload.setText(getString(R.string.use_selected_files));
+            upload.setOnClickListener(v -> returnSelectedFiles());
+        } else {
+            upload.setOnClickListener(v -> startUploads());
+        }
 
         TextView note = text(getString(R.string.folder_note), 12, 0xFF64708A, false);
         root.addView(note, margin(0, 0, 0, 16));
-        root.addView(text(getString(R.string.tasks), 18, 0xFF17233C, true), margin(0, 0, 0, 6));
+        TextView tasksTitle = text(getString(R.string.tasks), 18, 0xFF17233C, true);
+        root.addView(tasksTitle, margin(0, 0, 0, 6));
+        if (pickerMode) {
+            note.setVisibility(View.GONE);
+            tasksTitle.setVisibility(View.GONE);
+        }
         taskList = new LinearLayout(this);
         taskList.setOrientation(LinearLayout.VERTICAL);
         root.addView(taskList);
+        if (pickerMode) {
+            taskList.setVisibility(View.GONE);
+        } else {
+            selectedTitle.setVisibility(View.GONE);
+            selectedList.setVisibility(View.GONE);
+            upload.setVisibility(View.GONE);
+            note.setVisibility(View.GONE);
+            tasksTitle.setVisibility(View.GONE);
+            taskList.setVisibility(View.GONE);
+            TextView info = text(getString(R.string.home_info), 16, 0xFF25324A, false);
+            info.setPadding(0, dp(20), 0, 0);
+            root.addView(info);
+        }
         setContentView(scroll);
         renderSelected();
         renderTasks();
+    }
+
+    private boolean isFilePickerRequest(Intent intent) {
+        if (intent == null) return false;
+        String action = intent.getAction();
+        return Intent.ACTION_GET_CONTENT.equals(action)
+                || Intent.ACTION_OPEN_DOCUMENT.equals(action)
+                || Intent.ACTION_PICK.equals(action);
+    }
+
+    private void returnSelectedFiles() {
+        if (selected.isEmpty()) {
+            toast(getString(R.string.files_required));
+            return;
+        }
+        ArrayList<Uri> uris = new ArrayList<>();
+        for (UploadItem item : selected) uris.add(item.uri);
+        Intent result = new Intent();
+        result.setData(uris.get(0));
+        ClipData clip = ClipData.newUri(getContentResolver(), selected.get(0).path, uris.get(0));
+        for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
+        result.setClipData(clip);
+        result.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        result.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, uris.size() > 1);
+        setResult(RESULT_OK, result);
+        finish();
     }
 
     private void openFilePicker() {
@@ -180,8 +235,10 @@ public class MainActivity extends Activity {
             Uri tree = data.getData();
             persistUriPermission(data, true);
             if (tree != null) {
-                String rootName = displayName(tree);
-                collectTree(tree, tree, rootName);
+                String rootDocumentId = DocumentsContract.getTreeDocumentId(tree);
+                Uri rootDocumentUri = DocumentsContract.buildDocumentUriUsingTree(tree, rootDocumentId);
+                String rootName = displayName(rootDocumentUri);
+                collectTree(tree, rootDocumentId, rootName);
                 renderSelected();
             }
         }
@@ -195,22 +252,31 @@ public class MainActivity extends Activity {
         catch (Exception ignored) { }
     }
 
-    private void collectTree(Uri tree, Uri parent, String relative) {
+    private void collectTree(Uri tree, String parentDocumentId, String relative) {
+        Cursor c = null;
         try {
-            String docId = DocumentsContract.getTreeDocumentId(tree);
-            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getDocumentId(parent));
-            Cursor c = getContentResolver().query(children, new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE}, null, null, null);
+            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentDocumentId);
+            c = getContentResolver().query(children,
+                    new String[]{DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                            DocumentsContract.Document.COLUMN_MIME_TYPE}, null, null, null);
             if (c == null) return;
             while (c.moveToNext()) {
-                String id = c.getString(0), name = c.getString(1), mime = c.getString(2);
+                String id = c.getString(0);
+                String name = c.getString(1);
+                String mime = c.getString(2);
                 Uri child = DocumentsContract.buildDocumentUriUsingTree(tree, id);
                 String path = relative + "/" + name;
-                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) collectTree(tree, child, path);
-                else addUri(child, path);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                    collectTree(tree, id, path);
+                } else {
+                    addUri(child, path);
+                }
             }
-            c.close();
         } catch (Exception e) {
             toast(e.getMessage() == null ? getString(R.string.failed) : e.getMessage());
+        } finally {
+            if (c != null) c.close();
         }
     }
 
