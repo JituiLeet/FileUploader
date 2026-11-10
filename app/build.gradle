@@ -1,0 +1,25 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.jituileet.fileuploader'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.jituileet.fileuploader'
+        minSdk 21
+        targetSdk 28
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+}
