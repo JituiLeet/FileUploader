@@ -21,6 +21,14 @@ import java.util.List;
 import java.util.Locale;
 
 public class FileUploaderDocumentsProvider extends DocumentsProvider {
+    private static final String[] DEFAULT_DOCUMENT_PROJECTION = {
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_FLAGS,
+            DocumentsContract.Document.COLUMN_SIZE,
+            DocumentsContract.Document.COLUMN_LAST_MODIFIED
+    };
     private static final String ROOT_ID = "internal_storage";
     private static final String DOC_ROOT = "root";
     private File storageRoot;
@@ -69,7 +77,7 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
         if (!parent.isDirectory() || !parent.canRead()) throw new FileNotFoundException(parentDocumentId);
         File[] children = parent.listFiles();
         MatrixCursor cursor = new MatrixCursor(projection == null
-                ? DocumentsContract.Document.DEFAULT_DOCUMENT_PROJECTION : projection);
+                ? DEFAULT_DOCUMENT_PROJECTION : projection);
         if (children == null) return cursor;
         List<File> sorted = new ArrayList<>(Arrays.asList(children));
         Collections.sort(sorted, FILE_COMPARATOR);
@@ -102,7 +110,7 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
 
     private Cursor documentCursor(File file, String[] projection) {
         MatrixCursor cursor = new MatrixCursor(projection == null
-                ? DocumentsContract.Document.DEFAULT_DOCUMENT_PROJECTION : projection);
+                ? DEFAULT_DOCUMENT_PROJECTION : projection);
         includeDocumentRow(cursor, file);
         return cursor;
     }
