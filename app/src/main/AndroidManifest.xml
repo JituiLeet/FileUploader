@@ -14,7 +14,7 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize"
             android:exported="true">
-            <intent-filter>
+            <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.GET_CONTENT" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.OPENABLE" />
@@ -27,17 +27,6 @@
                 <data android:mimeType="*/*" />
             </intent-filter>
         </activity>
-
-        <provider
-            android:name=".FileUploaderDocumentsProvider"
-            android:authorities="${applicationId}.documents"
-            android:exported="true"
-            android:grantUriPermissions="true"
-            android:permission="android.permission.MANAGE_DOCUMENTS">
-            <intent-filter>
-                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
-            </intent-filter>
-        </provider>
 
         <provider
             android:name="androidx.core.content.FileProvider"
