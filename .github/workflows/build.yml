@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -23,21 +23,14 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          # Do not request the obsolete 'tools' package. It causes sdkmanager
-          # to fail on current Android SDK repositories.
           packages: platform-tools
           accept-android-sdk-licenses: true
 
       - name: Install required Android SDK packages
-        run: |
-          sdkmanager --install \\
-            "platforms;android-35" \\
-            "build-tools;35.0.0" \\
-            "platform-tools"
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Build APKs
-        run: |
-          gradle --no-daemon clean assembleDebug assembleRelease
+        run: gradle --no-daemon clean assembleDebug assembleRelease
 
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
