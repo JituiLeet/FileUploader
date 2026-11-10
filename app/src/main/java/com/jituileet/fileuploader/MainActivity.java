@@ -2,11 +2,14 @@ package com.jituileet.fileuploader;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.AdapterView;
@@ -21,11 +24,14 @@ import android.widget.Toast;
 import androidx.documentfile.provider.DocumentFile;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final int REQUEST_TREE = 1001;
@@ -47,6 +53,9 @@ public class MainActivity extends Activity {
     private final Set<String> selectedUris = new HashSet<>();
     private final ArrayList<DocumentFile> selectedFiles = new ArrayList<>();
     private ItemAdapter adapter;
+    private final ExecutorService scanExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private ProgressDialog scanDialog;
 
     private String requestedAction;
     private String requestedMime = "*/*";
@@ -284,35 +293,74 @@ public class MainActivity extends Activity {
 
     private void selectCurrentFolderContents() {
         if (currentFolder == null) return;
-        ArrayList<DocumentFile> files = new ArrayList<>();
-        collectFiles(currentFolder, files);
-        if (files.isEmpty()) {
-            Toast.makeText(this, "当前文件夹中没有可上传的文件", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        selectedFiles.clear();
-        selectedUris.clear();
-        for (DocumentFile file : files) {
-            if (matchesRequestedMime(file)) {
-                selectedFiles.add(file);
-                selectedUris.add(file.getUri().toString());
+
+        final DocumentFile folderToScan = currentFolder;
+        chooseRootButton.setEnabled(false);
+        chooseFolderButton.setEnabled(false);
+        selectButton.setEnabled(false);
+
+        scanDialog = new ProgressDialog(this);
+        scanDialog.setTitle("正在扫描文件夹");
+        scanDialog.setMessage("正在查找文件，请稍候…");
+        scanDialog.setIndeterminate(true);
+        scanDialog.setCancelable(false);
+        scanDialog.show();
+
+        scanExecutor.execute(() -> {
+            ArrayList<DocumentFile> files = new ArrayList<>();
+            collectFiles(folderToScan, files);
+
+            ArrayList<DocumentFile> matchedFiles = new ArrayList<>();
+            for (DocumentFile file : files) {
+                if (matchesRequestedMime(file)) matchedFiles.add(file);
             }
-        }
-        refreshList();
-        Toast.makeText(this, "已选择 " + selectedFiles.size() + " 个文件", Toast.LENGTH_SHORT).show();
-        if (launchedAsPicker && !folderTreeRequest) finishWithSelectedFiles();
+
+            mainHandler.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (scanDialog != null && scanDialog.isShowing()) scanDialog.dismiss();
+                scanDialog = null;
+
+                chooseRootButton.setEnabled(true);
+                updateButtons();
+
+                if (matchedFiles.isEmpty()) {
+                    Toast.makeText(this, "当前文件夹中没有可上传的文件", Toast.LENGTH_LONG).show();
+                    return;
+                }
+
+                selectedFiles.clear();
+                selectedUris.clear();
+                for (DocumentFile file : matchedFiles) {
+                    selectedFiles.add(file);
+                    selectedUris.add(file.getUri().toString());
+                }
+
+                refreshList();
+                Toast.makeText(this, "已找到 " + selectedFiles.size() + " 个文件", Toast.LENGTH_SHORT).show();
+
+                if (launchedAsPicker && !folderTreeRequest) finishWithSelectedFiles();
+            });
+        });
     }
 
+    // Scan outside the UI thread and use an explicit stack to avoid deep-recursion crashes.
     private void collectFiles(DocumentFile directory, List<DocumentFile> output) {
-        DocumentFile[] children;
-        try {
-            children = directory.listFiles();
-        } catch (Exception e) {
-            return;
-        }
-        for (DocumentFile child : children) {
-            if (child.isDirectory()) collectFiles(child, output);
-            else if (child.isFile()) output.add(child);
+        ArrayDeque<DocumentFile> pending = new ArrayDeque<>();
+        pending.push(directory);
+        while (!pending.isEmpty()) {
+            DocumentFile current = pending.pop();
+            DocumentFile[] children;
+            try {
+                children = current.listFiles();
+            } catch (Exception e) {
+                continue;
+            }
+            for (DocumentFile child : children) {
+                try {
+                    if (child.isDirectory()) pending.push(child);
+                    else if (child.isFile()) output.add(child);
+                } catch (Exception ignored) { }
+            }
         }
     }
 
@@ -325,9 +373,15 @@ public class MainActivity extends Activity {
         for (DocumentFile file : selectedFiles) uris.add(file.getUri());
         Intent result = new Intent();
         result.setAction(requestedAction);
-        result.setDataAndType(uris.get(0), requestedMime);
         result.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        if (uris.size() > 1) {
+
+        if (uris.size() == 1) {
+            result.setDataAndType(uris.get(0), requestedMime);
+        } else {
+            // Multi-file result: use ClipData + EXTRA_ALLOW_MULTIPLE only.
+            // Setting data to the first URI can cause clients to treat the folder
+            // selection as a single-file result and ignore the remaining items.
+            result.setType(requestedMime);
             ClipData clip = ClipData.newUri(getContentResolver(), "上传文件", uris.get(0));
             for (int i = 1; i < uris.size(); i++) {
                 clip.addItem(new ClipData.Item(uris.get(i)));
@@ -347,6 +401,13 @@ public class MainActivity extends Activity {
                 | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
         setResult(RESULT_OK, result);
         finish();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (scanDialog != null && scanDialog.isShowing()) scanDialog.dismiss();
+        scanExecutor.shutdownNow();
+        super.onDestroy();
     }
 
     @Override
