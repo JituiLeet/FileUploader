@@ -7,6 +7,8 @@ on:
       - main
     paths:
       - 'app/build.gradle'
+      - 'app/src/main/**'
+      - '.github/workflows/build.yml'
 
 permissions:
   contents: read
