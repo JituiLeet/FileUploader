@@ -9,8 +9,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -19,21 +20,26 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # Do not request the obsolete 'tools' package. It causes sdkmanager
+          # to fail on current Android SDK repositories.
+          packages: platform-tools
+          accept-android-sdk-licenses: true
 
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Install required Android SDK packages
+        run: |
+          sdkmanager --install \\
+            "platforms;android-35" \\
+            "build-tools;35.0.0" \\
+            "platform-tools"
 
-      - name: Build Debug and Release APKs
-        run: gradle --no-daemon clean assembleDebug assembleRelease
+      - name: Build APKs
+        run: |
+          gradle --no-daemon clean assembleDebug assembleRelease
 
-      - name: Upload APKs
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: FileUploader-APKs
