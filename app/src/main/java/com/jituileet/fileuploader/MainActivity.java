@@ -252,6 +252,7 @@ public class MainActivity extends Activity {
 
     private void updateButtons() {
         chooseFolderButton.setEnabled(currentFolder != null);
+        selectButton.setText("确认选择 (" + selectedFiles.size() + ")");
         selectButton.setEnabled(!selectedFiles.isEmpty());
     }
 
