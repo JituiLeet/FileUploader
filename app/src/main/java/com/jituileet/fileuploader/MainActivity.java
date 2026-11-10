@@ -28,7 +28,10 @@ import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -50,7 +53,11 @@ public class MainActivity extends Activity {
     private DocumentFile currentFolder;
     private final ArrayList<DocumentFile> folderStack = new ArrayList<>();
     private final ArrayList<DocumentFile> visibleItems = new ArrayList<>();
-    private final Set<String> selectedUris = new HashSet<>();
+    private final Set<String> selectedUris = new LinkedHashSet<>();
+    private final Set<String> manuallySelectedUris = new LinkedHashSet<>();
+    private final Map<String, LinkedHashSet<String>> folderSelections = new LinkedHashMap<>();
+    private final Map<String, DocumentFile> documentCache = new LinkedHashMap<>();
+    private final Set<String> pendingFolderUris = new HashSet<>();
     private final ArrayList<DocumentFile> selectedFiles = new ArrayList<>();
     private ItemAdapter adapter;
     private final ExecutorService scanExecutor = Executors.newSingleThreadExecutor();
@@ -113,11 +120,13 @@ public class MainActivity extends Activity {
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
 
-        chooseRootButton = makeButton("选择存储位置");
-        chooseFolderButton = makeButton("选择当前文件夹");
-        selectButton = makeButton("返回所选文件");
+        chooseRootButton = makeButton("更换存储位置");
+        chooseFolderButton = makeButton("选中当前文件夹");
+        selectButton = makeButton("确认选择");
+        // A single browser screen handles both file and folder selection.
+        // Keep the old button reference hidden for compatibility with existing state code.
+        chooseFolderButton.setVisibility(View.GONE);
         actions.addView(chooseRootButton, new LinearLayout.LayoutParams(0, dp(48), 1));
-        actions.addView(chooseFolderButton, new LinearLayout.LayoutParams(0, dp(48), 1));
         actions.addView(selectButton, new LinearLayout.LayoutParams(0, dp(48), 1));
         rootLayout.addView(actions);
 
@@ -138,11 +147,9 @@ public class MainActivity extends Activity {
 
         listView.setOnItemLongClickListener((parent, view, position, id) -> {
             DocumentFile item = visibleItems.get(position);
-            if (item.isFile()) {
-                toggleSelection(item);
-                return true;
-            }
-            return false;
+            if (item.isDirectory()) toggleFolderSelection(item);
+            else toggleSelection(item);
+            return true;
         });
 
         setContentView(rootLayout);
@@ -208,6 +215,10 @@ public class MainActivity extends Activity {
                 folderStack.clear();
                 folderStack.add(treeRoot);
                 selectedUris.clear();
+                manuallySelectedUris.clear();
+                folderSelections.clear();
+                documentCache.clear();
+                pendingFolderUris.clear();
                 selectedFiles.clear();
                 refreshList();
                 if (folderTreeRequest) {
@@ -238,7 +249,7 @@ public class MainActivity extends Activity {
         path.append(currentFolder != null && currentFolder.getName() != null
                 ? currentFolder.getName() : "存储空间");
         pathView.setText(path.toString());
-        hintView.setText("点击文件夹进入；点击文件选择，长按文件也可选择。已选择 "
+        hintView.setText("点击文件夹名称进入；勾选文件或文件夹即可选择。已选择 "
                 + selectedFiles.size() + " 个文件");
         adapter.notifyDataSetChanged();
         updateButtons();
@@ -258,21 +269,16 @@ public class MainActivity extends Activity {
 
     private void toggleSelection(DocumentFile file) {
         String key = file.getUri().toString();
-        if (selectedUris.contains(key)) {
-            selectedUris.remove(key);
-            for (int i = selectedFiles.size() - 1; i >= 0; i--) {
-                if (selectedFiles.get(i).getUri().toString().equals(key)) {
-                    selectedFiles.remove(i);
-                }
-            }
+        if (manuallySelectedUris.contains(key)) {
+            manuallySelectedUris.remove(key);
+        } else if (matchesRequestedMime(file)) {
+            manuallySelectedUris.add(key);
+            documentCache.put(key, file);
         } else {
-            if (matchesRequestedMime(file)) {
-                selectedUris.add(key);
-                selectedFiles.add(file);
-            } else {
-                Toast.makeText(this, "该文件类型与调用应用请求的类型不匹配", Toast.LENGTH_SHORT).show();
-            }
+            Toast.makeText(this, "该文件类型与调用应用请求的类型不匹配", Toast.LENGTH_SHORT).show();
+            return;
         }
+        rebuildSelectedFiles();
         refreshList();
     }
 
@@ -293,73 +299,127 @@ public class MainActivity extends Activity {
     }
 
     private void selectCurrentFolderContents() {
-        if (currentFolder == null) return;
+        if (currentFolder != null) toggleFolderSelection(currentFolder);
+    }
 
-        final DocumentFile folderToScan = currentFolder;
-        chooseRootButton.setEnabled(false);
-        chooseFolderButton.setEnabled(false);
-        selectButton.setEnabled(false);
+    private void toggleFolderSelection(DocumentFile folder) {
+        final String folderKey = folder.getUri().toString();
+        if (pendingFolderUris.contains(folderKey)) return;
 
-        scanDialog = new ProgressDialog(this);
-        scanDialog.setTitle("正在扫描文件夹");
-        scanDialog.setMessage("正在查找文件，请稍候…");
-        scanDialog.setIndeterminate(true);
-        scanDialog.setCancelable(false);
-        scanDialog.show();
+        if (folderSelections.containsKey(folderKey)) {
+            folderSelections.remove(folderKey);
+            rebuildSelectedFiles();
+            refreshList();
+            return;
+        }
+
+        pendingFolderUris.add(folderKey);
+        setScanUiEnabled(false);
+        showScanDialog();
 
         scanExecutor.execute(() -> {
-            ArrayList<DocumentFile> files = new ArrayList<>();
-            collectFiles(folderToScan, files);
-
-            ArrayList<DocumentFile> matchedFiles = new ArrayList<>();
-            for (DocumentFile file : files) {
-                if (matchesRequestedMime(file)) matchedFiles.add(file);
+            ArrayList<DocumentFile> found = new ArrayList<>();
+            collectFiles(folder, found);
+            LinkedHashSet<String> uris = new LinkedHashSet<>();
+            for (DocumentFile file : found) {
+                String key = file.getUri().toString();
+                uris.add(key);
+                documentCache.put(key, file);
             }
 
             mainHandler.post(() -> {
+                pendingFolderUris.remove(folderKey);
                 if (isFinishing() || isDestroyed()) return;
-                if (scanDialog != null && scanDialog.isShowing()) scanDialog.dismiss();
-                scanDialog = null;
+                hideScanDialog();
+                setScanUiEnabled(true);
 
-                chooseRootButton.setEnabled(true);
-                updateButtons();
-
-                if (matchedFiles.isEmpty()) {
-                    Toast.makeText(this, "当前文件夹中没有可上传的文件", Toast.LENGTH_LONG).show();
+                if (uris.isEmpty()) {
+                    Toast.makeText(this, "该文件夹中没有符合条件的文件", Toast.LENGTH_LONG).show();
+                    refreshList();
                     return;
                 }
-
-                selectedFiles.clear();
-                selectedUris.clear();
-                for (DocumentFile file : matchedFiles) {
-                    selectedFiles.add(file);
-                    selectedUris.add(file.getUri().toString());
-                }
-
+                folderSelections.put(folderKey, uris);
+                rebuildSelectedFiles();
                 refreshList();
-                Toast.makeText(this, "已找到 " + selectedFiles.size() + " 个文件", Toast.LENGTH_SHORT).show();
-
-                if (launchedAsPicker && !folderTreeRequest) finishWithSelectedFiles();
+                Toast.makeText(this, "已加入 " + uris.size() + " 个文件", Toast.LENGTH_SHORT).show();
             });
         });
     }
 
-    // Scan outside the UI thread and use an explicit stack to avoid deep-recursion crashes.
+    private void setScanUiEnabled(boolean enabled) {
+        chooseRootButton.setEnabled(enabled);
+        selectButton.setEnabled(enabled && !selectedFiles.isEmpty());
+        listView.setEnabled(enabled);
+    }
+
+    private void showScanDialog() {
+        scanDialog = new ProgressDialog(this);
+        scanDialog.setTitle("正在扫描文件夹");
+        scanDialog.setMessage("正在按文件夹层级整理文件，请稍候…");
+        scanDialog.setIndeterminate(true);
+        scanDialog.setCancelable(false);
+        scanDialog.show();
+    }
+
+    private void hideScanDialog() {
+        if (scanDialog != null && scanDialog.isShowing()) scanDialog.dismiss();
+        scanDialog = null;
+    }
+
+    private void rebuildSelectedFiles() {
+        selectedUris.clear();
+        selectedUris.addAll(manuallySelectedUris);
+        for (Set<String> folderUris : folderSelections.values()) selectedUris.addAll(folderUris);
+
+        LinkedHashMap<String, DocumentFile> ordered = new LinkedHashMap<>();
+        for (String key : manuallySelectedUris) {
+            DocumentFile file = documentCache.get(key);
+            if (file != null) ordered.put(key, file);
+        }
+        for (Set<String> folderUris : folderSelections.values()) {
+            for (String key : folderUris) {
+                DocumentFile file = documentCache.get(key);
+                if (file != null) ordered.putIfAbsent(key, file);
+            }
+        }
+        selectedFiles.clear();
+        selectedFiles.addAll(ordered.values());
+    }
+
+    // Deterministic depth-first traversal. Each directory is sorted before
+    // traversal, so the returned upload list follows a stable folder/file order.
     private void collectFiles(DocumentFile directory, List<DocumentFile> output) {
         ArrayDeque<DocumentFile> pending = new ArrayDeque<>();
+        Set<String> visitedDirectories = new HashSet<>();
         pending.push(directory);
         while (!pending.isEmpty()) {
             DocumentFile current = pending.pop();
+            String directoryKey = current.getUri().toString();
+            if (!visitedDirectories.add(directoryKey)) continue;
+
             DocumentFile[] children;
             try {
                 children = current.listFiles();
             } catch (Exception e) {
                 continue;
             }
-            for (DocumentFile child : children) {
+            if (children == null) continue;
+
+            ArrayList<DocumentFile> sorted = new ArrayList<>();
+            Collections.addAll(sorted, children);
+            Collections.sort(sorted, (a, b) -> {
+                if (a.isDirectory() != b.isDirectory()) return a.isDirectory() ? -1 : 1;
+                String an = a.getName() == null ? "" : a.getName();
+                String bn = b.getName() == null ? "" : b.getName();
+                return an.compareToIgnoreCase(bn);
+            });
+
+            // Reverse push preserves ascending order when popping from the stack.
+            for (int i = sorted.size() - 1; i >= 0; i--) {
+                DocumentFile child = sorted.get(i);
                 try {
                     if (child.isDirectory()) pending.push(child);
-                    else if (child.isFile()) output.add(child);
+                    else if (child.isFile() && matchesRequestedMime(child)) output.add(child);
                 } catch (Exception ignored) { }
             }
         }
@@ -406,7 +466,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        if (scanDialog != null && scanDialog.isShowing()) scanDialog.dismiss();
+        hideScanDialog();
         scanExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -463,9 +523,15 @@ public class MainActivity extends Activity {
 
             CheckBox check = new CheckBox(MainActivity.this);
             check.setFocusable(false);
-            check.setClickable(false);
-            check.setChecked(selectedUris.contains(item.getUri().toString()));
-            check.setVisibility(item.isFile() ? View.VISIBLE : View.INVISIBLE);
+            check.setClickable(true);
+            String itemUri = item.getUri().toString();
+            check.setChecked(item.isDirectory()
+                    ? folderSelections.containsKey(itemUri)
+                    : selectedUris.contains(itemUri));
+            check.setOnClickListener(v -> {
+                if (item.isDirectory()) toggleFolderSelection(item);
+                else toggleSelection(item);
+            });
             row.addView(check);
             return row;
         }
