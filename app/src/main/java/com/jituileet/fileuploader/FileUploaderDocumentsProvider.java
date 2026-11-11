@@ -204,7 +204,15 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
     }
 
     private static void add(MatrixCursor.RowBuilder row, String[] columns, String column, Object value) {
-        for (String c : columns) if (column.equals(c)) { row.add(value); return; }
+        for (String c : columns) {
+            if (column.equals(c)) {
+                // RowBuilder.add(value) appends to the next position and does not
+                // respect the requested projection order. Use the named-column
+                // overload so Chromium always receives values under the right columns.
+                row.add(column, value);
+                return;
+            }
+        }
     }
 
     private static final Comparator<File> FILE_COMPARATOR = (a, b) -> {
