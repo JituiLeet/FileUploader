@@ -170,8 +170,13 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
                 id += "/" + selectedPath.substring(rootPath.length() + 1)
                         .replace(File.separator, "/");
             }
-            return DocumentsContract.buildTreeDocumentUri(
-                    context.getPackageName() + ".documents", id);
+            String authority = context.getPackageName() + ".documents";
+            // A bare /tree/<id> URI identifies the granted subtree, but it is not
+            // itself a document URI. Chromium queries the selected directory as a
+            // document and then enumerates its children. Return
+            // /tree/<treeId>/document/<documentId> while retaining the subtree grant.
+            Uri treeUri = DocumentsContract.buildTreeDocumentUri(authority, id);
+            return DocumentsContract.buildDocumentUriUsingTree(treeUri, id);
         } catch (FileNotFoundException e) {
             throw e;
         } catch (Exception e) {
