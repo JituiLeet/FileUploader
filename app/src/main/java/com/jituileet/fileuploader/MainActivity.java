@@ -79,7 +79,8 @@ public class MainActivity extends Activity {
         requestedAction = incoming == null ? null : incoming.getAction();
         requestedMime = incoming != null && incoming.getType() != null ? incoming.getType() : "*/*";
         launchedAsPicker = Intent.ACTION_GET_CONTENT.equals(requestedAction)
-                || Intent.ACTION_OPEN_DOCUMENT.equals(requestedAction);
+                || Intent.ACTION_OPEN_DOCUMENT.equals(requestedAction)
+                || Intent.ACTION_OPEN_DOCUMENT_TREE.equals(requestedAction);
         buildInterface();
         if (hasStoragePermission()) openStorageRoot();
         else requestStoragePermission();
@@ -367,10 +368,12 @@ public class MainActivity extends Activity {
         }
         try {
             if (selectedFolder != null) {
-                Uri directoryUri = FileUploaderDocumentsProvider.buildDocumentUri(this, selectedFolder);
+                Uri directoryUri = FileUploaderDocumentsProvider.buildTreeDocumentUri(this, selectedFolder);
                 Intent result = new Intent();
                 result.setData(directoryUri);
-                result.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                result.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                        | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
                 setResult(RESULT_OK, result);
                 finish();
                 return;

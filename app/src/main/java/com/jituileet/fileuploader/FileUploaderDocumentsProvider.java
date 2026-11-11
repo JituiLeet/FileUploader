@@ -154,8 +154,8 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
         }
     }
 
-    /** Builds a stable content URI for a file or directory selected in our picker. */
-    public static Uri buildDocumentUri(Context context, File file) throws FileNotFoundException {
+    /** Builds a tree URI so browser clients can enumerate the selected directory and descendants. */
+    public static Uri buildTreeDocumentUri(Context context, File file) throws FileNotFoundException {
         try {
             File root = Environment.getExternalStorageDirectory().getCanonicalFile();
             File selected = file.getCanonicalFile();
@@ -170,7 +170,7 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
                 id += "/" + selectedPath.substring(rootPath.length() + 1)
                         .replace(File.separator, "/");
             }
-            return DocumentsContract.buildDocumentUri(
+            return DocumentsContract.buildTreeDocumentUri(
                     context.getPackageName() + ".documents", id);
         } catch (FileNotFoundException e) {
             throw e;
