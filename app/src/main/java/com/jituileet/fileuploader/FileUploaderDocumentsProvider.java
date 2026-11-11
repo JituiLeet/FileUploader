@@ -119,7 +119,8 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
     private void includeDocumentRow(MatrixCursor cursor, File file) {
         String id = documentIdFor(file);
         String mime = file.isDirectory() ? DocumentsContract.Document.MIME_TYPE_DIR : mimeType(file);
-        int flags = file.isDirectory() ? DocumentsContract.Document.FLAG_DIR_SUPPORTS_SEARCH : 0;
+        // Read-only directory enumeration needs no optional document flags.
+        int flags = 0;
         MatrixCursor.RowBuilder row = cursor.newRow();
         String[] columns = cursor.getColumnNames();
         add(row, columns, DocumentsContract.Document.COLUMN_DOCUMENT_ID, id);
