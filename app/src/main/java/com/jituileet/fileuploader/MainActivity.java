@@ -68,6 +68,9 @@ public class MainActivity extends Activity {
     private String requestedAction;
     private String requestedMime = "*/*";
     private boolean launchedAsPicker;
+    // A directory is returned as one DocumentsProvider content URI so Chromium can
+    // enumerate it recursively and calculate each file's webkitRelativePath.
+    private File selectedFolder;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -215,11 +218,14 @@ public class MainActivity extends Activity {
             }
         }
         pathView.setText(currentFolder == null ? "设备存储" : displayPath(currentFolder));
-        hintView.setText("直接浏览设备文件；勾选文件或文件夹加入上传列表。已选择 "
-                + selectedFiles.size() + " 个文件");
+        int selectedCount = selectedFolder != null ? 1 : selectedFiles.size();
+        hintView.setText(selectedFolder != null
+                ? "已选择文件夹：" + selectedFolder.getName() + "（将保留内部目录结构）"
+                : "直接浏览设备文件；勾选文件或长按文件夹加入上传列表。已选择 "
+                + selectedCount + " 项");
         upButton.setEnabled(folderStack.size() > 1);
-        confirmButton.setText("确认选择 (" + selectedFiles.size() + ")");
-        confirmButton.setEnabled(!selectedFiles.isEmpty());
+        confirmButton.setText("确认选择 (" + selectedCount + ")");
+        confirmButton.setEnabled(selectedFolder != null || !selectedFiles.isEmpty());
         adapter.notifyDataSetChanged();
     }
 
@@ -237,6 +243,9 @@ public class MainActivity extends Activity {
     };
 
     private void toggleFile(File file) {
+        // Mixing individual files with a directory would flatten the directory upload.
+        // Selecting a file therefore switches back to ordinary multi-file selection.
+        selectedFolder = null;
         String key = canonicalPath(file);
         if (manuallySelectedFiles.containsKey(key)) manuallySelectedFiles.remove(key);
         else if (matchesRequestedMime(file)) {
@@ -251,43 +260,23 @@ public class MainActivity extends Activity {
     }
 
     private void toggleFolder(File folder) {
-        String folderKey = canonicalPath(folder);
-        if (pendingFolders.contains(folderKey)) return;
-        if (folderSelections.containsKey(folderKey)) {
-            folderSelections.remove(folderKey);
-            rebuildSelection();
-            refreshList();
+        if (folder == null || !folder.isDirectory() || !folder.canRead()) {
+            Toast.makeText(this, "无法读取此文件夹", Toast.LENGTH_SHORT).show();
             return;
         }
-        pendingFolders.add(folderKey);
-        setBusy(true);
-        showProgress();
-
-        executor.execute(() -> {
-            ArrayList<File> found = new ArrayList<>();
-            collectFilesInStableOrder(folder, found);
-            LinkedHashSet<String> paths = new LinkedHashSet<>();
-            for (File f : found) {
-                String key = canonicalPath(f);
-                paths.add(key);
-                fileCache.put(key, f);
-            }
-            mainHandler.post(() -> {
-                pendingFolders.remove(folderKey);
-                hideProgress();
-                setBusy(false);
-                if (isFinishing() || isDestroyed()) return;
-                if (paths.isEmpty()) {
-                    Toast.makeText(this, "该文件夹中没有符合要求的文件", Toast.LENGTH_LONG).show();
-                    refreshList();
-                    return;
-                }
-                folderSelections.put(folderKey, paths);
-                rebuildSelection();
-                refreshList();
-                Toast.makeText(this, "已加入 " + paths.size() + " 个文件", Toast.LENGTH_SHORT).show();
-            });
-        });
+        String key = canonicalPath(folder);
+        if (selectedFolder != null && canonicalPath(selectedFolder).equals(key)) {
+            selectedFolder = null;
+        } else {
+            // Chromium's directory-upload path expects one directory content URI.
+            // Returning the directory itself lets Chromium recursively enumerate
+            // children instead of receiving a flattened list of unrelated file URIs.
+            selectedFolder = folder;
+            manuallySelectedFiles.clear();
+            folderSelections.clear();
+            selectedFiles.clear();
+        }
+        refreshList();
     }
 
     private void collectFilesInStableOrder(File root, List<File> output) {
@@ -329,6 +318,7 @@ public class MainActivity extends Activity {
 
     private void rebuildSelection() {
         selectedFiles.clear();
+        if (selectedFolder != null) return;
         selectedFiles.putAll(manuallySelectedFiles);
         for (Set<String> paths : folderSelections.values()) {
             for (String path : paths) {
@@ -352,7 +342,7 @@ public class MainActivity extends Activity {
     private void setBusy(boolean busy) {
         listView.setEnabled(!busy);
         upButton.setEnabled(!busy && folderStack.size() > 1);
-        confirmButton.setEnabled(!busy && !selectedFiles.isEmpty());
+        confirmButton.setEnabled(!busy && (selectedFolder != null || !selectedFiles.isEmpty()));
     }
 
     private void showProgress() {
@@ -370,12 +360,21 @@ public class MainActivity extends Activity {
     }
 
     private void confirmSelection() {
-        if (selectedFiles.isEmpty()) return;
+        if (selectedFolder == null && selectedFiles.isEmpty()) return;
         if (!launchedAsPicker) {
             Toast.makeText(this, "已选择 " + selectedFiles.size() + " 个文件", Toast.LENGTH_SHORT).show();
             return;
         }
         try {
+            if (selectedFolder != null) {
+                Uri directoryUri = FileUploaderDocumentsProvider.buildDocumentUri(this, selectedFolder);
+                Intent result = new Intent();
+                result.setData(directoryUri);
+                result.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                setResult(RESULT_OK, result);
+                finish();
+                return;
+            }
             ArrayList<Uri> uris = new ArrayList<>();
             for (File file : selectedFiles.values()) {
                 uris.add(FileProvider.getUriForFile(this, getPackageName() + FILE_PROVIDER_SUFFIX, file));
@@ -447,7 +446,7 @@ public class MainActivity extends Activity {
             CheckBox check = new CheckBox(MainActivity.this);
             check.setFocusable(false);
             check.setChecked(item.isDirectory()
-                    ? folderSelections.containsKey(canonicalPath(item))
+                    ? selectedFolder != null && canonicalPath(selectedFolder).equals(canonicalPath(item))
                     : selectedFiles.containsKey(canonicalPath(item)));
             check.setOnClickListener(v -> {
                 if (item.isDirectory()) toggleFolder(item);

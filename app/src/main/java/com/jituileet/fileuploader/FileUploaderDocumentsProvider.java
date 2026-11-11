@@ -7,6 +7,7 @@ import android.os.CancellationSignal;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.provider.DocumentsContract;
+import android.net.Uri;
 import android.provider.DocumentsProvider;
 import android.provider.MediaStore;
 import android.webkit.MimeTypeMap;
@@ -118,7 +119,7 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
     private void includeDocumentRow(MatrixCursor cursor, File file) {
         String id = documentIdFor(file);
         String mime = file.isDirectory() ? DocumentsContract.Document.MIME_TYPE_DIR : mimeType(file);
-        int flags = 0;
+        int flags = file.isDirectory() ? DocumentsContract.Document.FLAG_DIR_SUPPORTS_SEARCH : 0;
         MatrixCursor.RowBuilder row = cursor.newRow();
         String[] columns = cursor.getColumnNames();
         add(row, columns, DocumentsContract.Document.COLUMN_DOCUMENT_ID, id);
@@ -149,6 +150,31 @@ public class FileUploaderDocumentsProvider extends DocumentsProvider {
             throw e;
         } catch (Exception e) {
             throw new FileNotFoundException(documentId);
+        }
+    }
+
+    /** Builds a stable content URI for a file or directory selected in our picker. */
+    public static Uri buildDocumentUri(Context context, File file) throws FileNotFoundException {
+        try {
+            File root = Environment.getExternalStorageDirectory().getCanonicalFile();
+            File selected = file.getCanonicalFile();
+            String rootPath = root.getPath();
+            String selectedPath = selected.getPath();
+            if (!selectedPath.equals(rootPath)
+                    && !selectedPath.startsWith(rootPath + File.separator)) {
+                throw new FileNotFoundException("所选路径不在共享存储目录中");
+            }
+            String id = DOC_ROOT;
+            if (!selectedPath.equals(rootPath)) {
+                id += "/" + selectedPath.substring(rootPath.length() + 1)
+                        .replace(File.separator, "/");
+            }
+            return DocumentsContract.buildDocumentUri(
+                    context.getPackageName() + ".documents", id);
+        } catch (FileNotFoundException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new FileNotFoundException("无法生成所选文件 URI");
         }
     }
 

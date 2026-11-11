@@ -28,6 +28,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Grants selected directory/document URIs to the browser. The provider is not
+             listed as a DocumentsUI root; the app's own picker remains the entry point. -->
+        <provider
+            android:name=".FileUploaderDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
